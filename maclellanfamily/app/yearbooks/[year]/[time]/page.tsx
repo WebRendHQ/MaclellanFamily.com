@@ -3,9 +3,8 @@ import React from 'react';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { auth } from '../../../api/firebase/firebase';
+import { auth, onAuthStateChanged } from "../../../lib/firebase-client";
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import Image from 'next/image';
 

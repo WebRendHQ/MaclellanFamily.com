@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 // import { useRouter } from 'next/navigation';
-import { auth, onAuthStateChanged } from "../api/firebase/firebase";
+import { auth, onAuthStateChanged } from "../lib/firebase-client";
 import { Book, Stars, Sparkles } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';

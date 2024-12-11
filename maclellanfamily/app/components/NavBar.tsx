@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Settings, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import Button from '../components/ui/ButtonN';
 import { logout } from '../api/firebase/auth';
 import { onAuthStateChanged, getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import UploadButton from './UploadButton';
 
 const NavButton = ({ 
     children, 
@@ -32,11 +33,6 @@ const NavButton = ({
 
 const Navbar = () => {
   const router = useRouter();
-  const [isUploading, setIsUploading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [folders, setFolders] = useState<{name: string}[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -56,29 +52,6 @@ const Navbar = () => {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const fetchFolders = async () => {
-      try {
-        const auth = getAuth();
-        const idToken = await auth.currentUser?.getIdToken();
-        
-        const response = await fetch('/api/s3', {
-          headers: {
-            'Authorization': `Bearer ${idToken}`
-          }
-        });
-        const data = await response.json();
-        setFolders(data.folders || []);
-      } catch (error) {
-        console.error('Failed to fetch folders:', error);
-      }
-    };
-  
-    if (showModal) {
-      fetchFolders();
-    }
-  }, [showModal]);
-
   const handleLogout = async () => {
     try {
       await logout();
@@ -90,58 +63,6 @@ const Navbar = () => {
 
   const handleSettings = () => {
     router.push('/settings');
-  };
-
-  const handleFileSelect = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-
-    input.onchange = (e) => {
-      const target = e.target as HTMLInputElement;
-      const file = target.files?.[0];
-      if (file) {
-        setSelectedFile(file);
-        setShowModal(true);
-      }
-    };
-
-    input.click();
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || !selectedFolder || isUploading) return;
-  
-    try {
-      setIsUploading(true);
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('folder', selectedFolder);
-  
-      const auth = getAuth();
-      const idToken = await auth.currentUser?.getIdToken();
-  
-      const response = await fetch('/api/s3', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: formData,
-      });
-  
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-  
-      console.log('Upload successful');
-      setShowModal(false);
-      setSelectedFile(null);
-      setSelectedFolder('');
-    } catch (error) {
-      console.error('Upload failed:', error);
-    } finally {
-      setIsUploading(false);
-    }
   };
 
   return (
@@ -168,9 +89,7 @@ const Navbar = () => {
           <div className="flex items-center space-x-4 bg-white p-2 rounded-lg shadow-md transform rotate-1">
             {isAdmin && (
               <>
-                <NavButton onClick={handleFileSelect}>
-                  <Upload className="h-5 w-5 text-gray-600" />
-                </NavButton>
+                <UploadButton />
                 <NavButton onClick={handleSettings}>
                   <Settings className="h-5 w-5 text-gray-600" />
                 </NavButton>
@@ -189,53 +108,6 @@ const Navbar = () => {
 
       {/* Add spacing below navbar to prevent content overlap */}
       <div className="h-20" />
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-semibold mb-4">Choose Upload Location</h2>
-            
-            <div className="space-y-4">
-              {selectedFile && (
-                <div className="text-sm text-gray-600">
-                  Selected file: {selectedFile.name}
-                </div>
-              )}
-              
-              <select
-                value={selectedFolder}
-                onChange={(e) => setSelectedFolder(e.target.value)}
-                className="w-full p-2 border rounded-lg"
-              >
-                <option value="">Select a folder</option>
-                {folders.map((folder) => (
-                  <option key={folder.name} value={folder.name}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  onClick={() => {
-                    setShowModal(false);
-                    setSelectedFile(null);
-                    setSelectedFolder('');
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpload}
-                  disabled={!selectedFolder || isUploading}
-                >
-                  {isUploading ? 'Uploading...' : 'Upload'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

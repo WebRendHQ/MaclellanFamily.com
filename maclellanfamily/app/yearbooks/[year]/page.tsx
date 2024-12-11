@@ -4,8 +4,8 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { FirebaseError } from 'firebase/app';
-import { auth, onAuthStateChanged } from '../../api/firebase/firebase';
-import { logout } from '../../api/firebase/auth';
+import { auth, onAuthStateChanged } from "../../lib/firebase-client";
+import { logout } from '../../lib/auth';
 import { useParams } from 'next/navigation';
 
 
