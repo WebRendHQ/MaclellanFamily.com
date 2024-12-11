@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "./api/firebase/auth";
-import { auth, onAuthStateChanged } from "./api/firebase/firebase";
+import { login } from "./lib/auth";
+import { auth, onAuthStateChanged } from "./lib/firebase-client";
 import { FirebaseError } from 'firebase/app';
 import { Pencil, Bookmark, Sticker } from 'lucide-react';
 import type { User } from 'firebase/auth';

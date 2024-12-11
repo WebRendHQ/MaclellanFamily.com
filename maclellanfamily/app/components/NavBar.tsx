@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import Button from '../components/ui/ButtonN';
-import { logout } from '../api/firebase/auth';
+import { logout } from '../lib/auth';
 import { onAuthStateChanged, getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import UploadButton from './UploadButton';

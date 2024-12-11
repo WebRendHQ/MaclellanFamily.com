@@ -1,14 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ListObjectsV2Command, S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { adminAuth, adminDb } from '../../../../lib/firebase-admin';
-import { DocumentSnapshot } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
 
 interface ImageResponse {
   key: string;
   url: string;
   lastModified?: string;
 }
+
+// Initialize Firebase Admin with retry logic
+const initializeFirebaseAdmin = () => {
+  if (getApps().length) return;
+  
+  try {
+    const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        privateKey,
+      }),
+    });
+  } catch (error) {
+    console.error('Firebase Admin initialization error:', error);
+  }
+};
+
+// Ensure Firebase Admin is initialized
+initializeFirebaseAdmin();
 
 // Initialize S3 Client with proper configuration
 const s3Client = new S3Client({
@@ -24,7 +46,7 @@ const s3Client = new S3Client({
 // Verify token with error handling
 const verifyAuthToken = async (token: string) => {
   try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     const tokenAge = Date.now() / 1000 - decodedToken.auth_time;
     
     if (tokenAge > 3600) {
@@ -33,6 +55,15 @@ const verifyAuthToken = async (token: string) => {
     
     return decodedToken;
   } catch (error) {
+    if (error instanceof Error && error.message === 'TOKEN_EXPIRED') {
+      throw error;
+    }
+    
+    if (error instanceof Error && error.message.includes('app/no-app')) {
+      initializeFirebaseAdmin();
+      return await getAuth().verifyIdToken(token);
+    }
+    
     throw error;
   }
 };
@@ -94,11 +125,17 @@ export async function GET(
     }
 
     // Get user data
-    let userDoc: DocumentSnapshot;
+    const db = getFirestore();
+    let userDoc;
     try {
-      userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+      userDoc = await db.collection('users').doc(decodedToken.uid).get();
     } catch (error) {
-      throw error;
+      if (error instanceof Error && error.message.includes('app/no-app')) {
+        initializeFirebaseAdmin();
+        userDoc = await db.collection('users').doc(decodedToken.uid).get();
+      } else {
+        throw error;
+      }
     }
 
     if (!userDoc.exists) {
