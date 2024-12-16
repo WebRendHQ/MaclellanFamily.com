@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth } from '../api/firebase/firebase';
-import { db } from '../api/firebase/firebase';
+import { auth } from '../lib/firebase-client';
+import { db } from '../lib/firebase-client';
 import { doc, updateDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import Button from '../components/ui/ButtonN';

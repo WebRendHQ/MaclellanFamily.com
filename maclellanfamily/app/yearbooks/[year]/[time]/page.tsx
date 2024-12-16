@@ -361,6 +361,20 @@ interface TimeParams {
   time: string;
 }
 
+function formatTitle(timeParam: string): string {
+  // Decode URL encoded characters
+  const decoded = decodeURIComponent(timeParam);
+  
+  // Replace hyphens and underscores with spaces
+  const withSpaces = decoded.replace(/[-_]/g, ' ');
+  
+  // Capitalize first letter of each word
+  return withSpaces
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export default function TimeItemsPage() {
   const [images, setImages] = useState<ImageData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -565,7 +579,7 @@ export default function TimeItemsPage() {
       <div className="max-w-[1800px] mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl md:text-5xl font-serif text-white mb-4">
-            {time.replace(/-/g, ' ')} - {year}
+            {formatTitle(time)} - {year}
           </h1>
           <div className="w-32 h-1 bg-white/30 mx-auto" />
         </div>
