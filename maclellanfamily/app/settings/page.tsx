@@ -27,6 +27,7 @@ const Settings = () => {
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
   const [isSendingVerification, setIsSendingVerification] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [verificationCooldown, setVerificationCooldown] = useState<number>(0);
 
   // Function to check verification status from both client and backend
   const checkVerificationStatus = async () => {
@@ -138,7 +139,42 @@ const Settings = () => {
     }
   };
 
+  // Helper function to handle Firebase verification errors
+  const handleVerificationError = (error: unknown): string => {
+    const errorString = (error as any)?.message || (error as any)?.toString?.() || String(error);
+    const errorCode = (error as any)?.code;
+    
+    if (errorString.includes('TOO_MANY_ATTEMPTS_TRY_LATER') || 
+        errorString.includes('too-many-requests') ||
+        errorCode === 'auth/too-many-requests') {
+      
+      // Set a 5-minute cooldown
+      const cooldownTime = Date.now() + (5 * 60 * 1000);
+      setVerificationCooldown(cooldownTime);
+      
+      return 'Too many verification attempts. Please wait 5 minutes before trying again. This helps prevent spam and protects your account.';
+    }
+    
+    if (errorString.includes('INVALID_EMAIL') || errorCode === 'auth/invalid-email') {
+      return 'Invalid email address. Please check your email and try again.';
+    }
+    
+    if (errorString.includes('USER_NOT_FOUND') || errorCode === 'auth/user-not-found') {
+      return 'User account not found. Please try logging out and back in.';
+    }
+    
+    return 'Failed to send verification email. Please try again in a few minutes.';
+  };
+
   const handleSendVerificationEmail = async () => {
+    // Check if we're still in cooldown period
+    const now = Date.now();
+    if (verificationCooldown > now) {
+      const remainingMinutes = Math.ceil((verificationCooldown - now) / (60 * 1000));
+      setError(`Please wait ${remainingMinutes} more minute(s) before trying again.`);
+      return;
+    }
+
     setIsSendingVerification(true);
     setError('');
     setSuccess('');
@@ -148,6 +184,8 @@ const Settings = () => {
       await sendVerificationEmail();
       setSuccess('Verification email sent! Please check your email and click the verification link.');
     } catch (err) {
+      console.error('Client-side verification failed:', err);
+      
       // If client-side fails, try the API method
       try {
         const result = await sendVerificationEmailViaAPI();
@@ -155,8 +193,12 @@ const Settings = () => {
           setSuccess(result.message + ' Please check your email and click the verification link.');
         }
       } catch (apiErr) {
-        setError('Failed to send verification email. Please try again later.');
-        console.error('Both verification methods failed:', err, apiErr);
+        console.error('API verification failed:', apiErr);
+        
+        // Use the more specific error from the API if available, otherwise use client error
+        const errorToHandle = apiErr || err;
+        const errorMessage = handleVerificationError(errorToHandle);
+        setError(errorMessage);
       }
     } finally {
       setIsSendingVerification(false);
