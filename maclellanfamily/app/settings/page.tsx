@@ -141,8 +141,9 @@ const Settings = () => {
 
   // Helper function to handle Firebase verification errors
   const handleVerificationError = (error: unknown): string => {
-    const errorString = (error as any)?.message || (error as any)?.toString?.() || String(error);
-    const errorCode = (error as any)?.code;
+    const errorObj = error as { message?: string; code?: string; toString?: () => string };
+    const errorString = errorObj?.message || errorObj?.toString?.() || String(error);
+    const errorCode = errorObj?.code;
     
     if (errorString.includes('TOO_MANY_ATTEMPTS_TRY_LATER') || 
         errorString.includes('too-many-requests') ||
