@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { auth } from '../lib/firebase-client';
 import { db } from '../lib/firebase-client';
 import { doc, updateDoc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { sendVerificationEmail, sendVerificationEmailViaAPI, checkVerificationStatusViaAPI, updateEmailViaAPI } from '../lib/auth';
 import Button from '../components/ui/ButtonN';
-import { Mail, Lock, Folder, UserCog } from 'lucide-react';
+import { Mail, Lock, Folder, UserCog, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
 
 const Settings = () => {
   const router = useRouter();
@@ -22,9 +23,51 @@ const Settings = () => {
   const [currentUserRole, setCurrentUserRole] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRole, setSelectedRole] = useState('user');
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [isCheckingVerification, setIsCheckingVerification] = useState(false);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+
+  // Function to check verification status from both client and backend
+  const checkVerificationStatus = async () => {
+    const user = auth.currentUser;
+    if (!user) return false;
+
+    try {
+      // First, reload user to get fresh client-side data
+      await user.reload();
+      const clientVerified = user.emailVerified;
+      
+      // Then check with backend API for server-side verification status
+      try {
+        const backendStatus = await checkVerificationStatusViaAPI();
+        const backendVerified = backendStatus.emailVerified;
+        
+        // Use the more recent/accurate status (backend is authoritative)
+        const finalVerified = backendVerified || clientVerified;
+        
+        console.log('Verification status check:', {
+          clientVerified,
+          backendVerified,
+          finalVerified
+        });
+        
+        return finalVerified;
+      } catch (apiError) {
+        // If backend check fails, fall back to client-side status
+        console.warn('Backend verification check failed, using client-side status:', apiError);
+        return clientVerified;
+      }
+    } catch (error) {
+      console.error('Error checking verification status:', error);
+      // Return current state as fallback
+      return user.emailVerified;
+    }
+  };
 
   useEffect(() => {
     const loadUserSettings = async () => {
+      setIsLoadingSettings(true);
       const user = auth.currentUser;
       if (!user) {
         router.push('/');
@@ -32,6 +75,16 @@ const Settings = () => {
       }
 
       setEmail(user.email || '');
+      
+      // Check verification status on load
+      try {
+        const verificationStatus = await checkVerificationStatus();
+        setEmailVerified(verificationStatus);
+      } catch (err) {
+        console.error('Failed to check verification status on load:', err);
+        // Fallback to client-side status
+        setEmailVerified(user.emailVerified);
+      }
 
       try {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
@@ -55,11 +108,60 @@ const Settings = () => {
       } catch (err) {
         setError('Failed to load settings');
         console.error(err);
+      } finally {
+        setIsLoadingSettings(false);
       }
     };
 
     loadUserSettings();
   }, [router]);
+
+  const handleRefreshVerificationStatus = async () => {
+    setIsCheckingVerification(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const verificationStatus = await checkVerificationStatus();
+      setEmailVerified(verificationStatus);
+      
+      if (verificationStatus) {
+        setSuccess('Email verification status updated - your email is verified!');
+      } else {
+        setError('Your email is still not verified. Please check your email and click the verification link.');
+      }
+    } catch (err) {
+      setError('Failed to refresh verification status');
+      console.error(err);
+    } finally {
+      setIsCheckingVerification(false);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    setIsSendingVerification(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      // Try using the client-side method first
+      await sendVerificationEmail();
+      setSuccess('Verification email sent! Please check your email and click the verification link.');
+    } catch (err) {
+      // If client-side fails, try the API method
+      try {
+        const result = await sendVerificationEmailViaAPI();
+        if (result.success) {
+          setSuccess(result.message + ' Please check your email and click the verification link.');
+        }
+      } catch (apiErr) {
+        setError('Failed to send verification email. Please try again later.');
+        console.error('Both verification methods failed:', err, apiErr);
+      }
+    } finally {
+      setIsSendingVerification(false);
+    }
+  };
 
   const handleReauthenticate = async () => {
     const user = auth.currentUser;
@@ -80,18 +182,32 @@ const Settings = () => {
     setError('');
     setSuccess('');
 
+    if (!emailVerified) {
+      setError('Please verify your current email address before changing it.');
+      return;
+    }
+
     const user = auth.currentUser;
     if (!user) return;
 
     try {
       if (await handleReauthenticate()) {
-        await updateEmail(user, newEmail);
-        setSuccess('Email updated successfully');
-        setNewEmail('');
-        setCurrentPassword('');
+        const result = await updateEmailViaAPI(newEmail);
+        if (result.success) {
+          setSuccess(result.message);
+          setEmail(newEmail); // Update the displayed current email
+          setNewEmail('');
+          setCurrentPassword('');
+          // Reset verification status since email changed and new email needs verification
+          setEmailVerified(false);
+        }
       }
     } catch (err) {
-      setError('Failed to update email');
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to update email');
+      }
       console.error(err);
     }
   };
@@ -100,6 +216,11 @@ const Settings = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    if (!emailVerified) {
+      setError('Please verify your email address before changing your password.');
+      return;
+    }
 
     const user = auth.currentUser;
     if (!user) return;
@@ -210,6 +331,87 @@ const Settings = () => {
     </div>
   );
 
+  // Email Verification Status Component
+  const EmailVerificationStatus = () => (
+    <section className="bg-white p-6 rounded-lg shadow-md relative transform rotate-1 border-2 border-gray-200 mb-8">
+      <div className="absolute -right-3 -top-3">
+        <Sticker color={emailVerified ? "bg-green-200" : "bg-red-200"}>
+          {emailVerified ? (
+            <CheckCircle className="w-6 h-6 text-green-600" />
+          ) : (
+            <AlertTriangle className="w-6 h-6 text-red-600" />
+          )}
+        </Sticker>
+      </div>
+      <TapeCorner />
+      <h2 className="text-xl font-bold mb-4 text-gray-800">Email Verification Status</h2>
+      
+      {isLoadingSettings ? (
+        <div className="p-4 rounded-lg border-2 bg-gray-50 border-gray-200">
+          <div className="flex items-center gap-3 mb-3">
+            <RefreshCw className="w-5 h-5 text-gray-600 animate-spin" />
+            <span className="font-medium text-gray-800">
+              Checking verification status...
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className={`p-4 rounded-lg border-2 ${
+          emailVerified 
+            ? 'bg-green-50 border-green-200' 
+            : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-3 mb-3">
+            {emailVerified ? (
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            )}
+            <span className={`font-medium ${
+              emailVerified ? 'text-green-800' : 'text-red-800'
+            }`}>
+              {emailVerified ? 'Email Verified' : 'Email Not Verified'}
+            </span>
+          </div>
+          
+          <p className={`text-sm mb-4 ${
+            emailVerified ? 'text-green-700' : 'text-red-700'
+          }`}>
+            {emailVerified 
+              ? 'Your email address has been verified. You can update your email and password.'
+              : 'Your email address is not verified. Please verify your email to update your account settings.'
+            }
+          </p>
+
+          {!emailVerified && (
+            <div className="space-y-3">
+              <Button
+                onClick={handleSendVerificationEmail}
+                disabled={isSendingVerification}
+                variant="default"
+                className="bg-blue-500 hover:bg-blue-600 transform hover:rotate-1 transition-all"
+              >
+                {isSendingVerification ? 'Sending...' : 'Send Verification Email'}
+              </Button>
+            </div>
+          )}
+
+          <div className="mt-3">
+            <Button
+              onClick={handleRefreshVerificationStatus}
+              disabled={isCheckingVerification}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${isCheckingVerification ? 'animate-spin' : ''}`} />
+              {isCheckingVerification ? 'Checking...' : 'Refresh Status'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+
   // Only render the role management section if the current user is an admin
   const RoleManagementSection = () => {
     if (currentUserRole !== 'admin') return null;
@@ -284,6 +486,9 @@ const Settings = () => {
       )}
 
       <div className="space-y-8">
+        {/* Email Verification Status Section */}
+        <EmailVerificationStatus />
+
         {/* Update Email Section */}
         <section className="bg-white p-6 rounded-lg shadow-md relative transform -rotate-1 border-2 border-gray-200">
           <div className="absolute -right-3 -top-3">
@@ -293,6 +498,14 @@ const Settings = () => {
           </div>
           <TapeCorner />
           <h2 className="text-xl font-bold mb-4 text-gray-800">Update Email</h2>
+          {!emailVerified && (
+            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mb-4">
+              <p className="text-yellow-800 text-sm">
+                <AlertTriangle className="w-4 h-4 inline mr-1" />
+                Please verify your current email address before updating it.
+              </p>
+            </div>
+          )}
           <form onSubmit={handleUpdateEmail} className="space-y-4">
             <FormInput
               label="Current Email"
@@ -306,6 +519,7 @@ const Settings = () => {
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               required={true}
+              disabled={!emailVerified}
               accentColor="blue"
             />
             <FormInput
@@ -314,9 +528,14 @@ const Settings = () => {
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required={true}
+              disabled={!emailVerified}
               accentColor="blue"
             />
-            <Button variant="default" className="w-full bg-blue-500 hover:bg-blue-600 transform hover:-rotate-1 transition-all">
+            <Button 
+              variant="default" 
+              className="w-full bg-blue-500 hover:bg-blue-600 transform hover:-rotate-1 transition-all"
+              disabled={!emailVerified}
+            >
               Update Email
             </Button>
           </form>
@@ -331,6 +550,14 @@ const Settings = () => {
           </div>
           <TapeCorner />
           <h2 className="text-xl font-bold mb-4 text-gray-800">Update Password</h2>
+          {!emailVerified && (
+            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mb-4">
+              <p className="text-yellow-800 text-sm">
+                <AlertTriangle className="w-4 h-4 inline mr-1" />
+                Please verify your email address before updating your password.
+              </p>
+            </div>
+          )}
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <FormInput
               label="Current Password"
@@ -338,6 +565,7 @@ const Settings = () => {
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required={true}
+              disabled={!emailVerified}
               accentColor="purple"
             />
             <FormInput
@@ -346,9 +574,14 @@ const Settings = () => {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required={true}
+              disabled={!emailVerified}
               accentColor="purple"
             />
-            <Button variant="default" className="w-full bg-purple-500 hover:bg-purple-600 transform hover:rotate-1 transition-all">
+            <Button 
+              variant="default" 
+              className="w-full bg-purple-500 hover:bg-purple-600 transform hover:rotate-1 transition-all"
+              disabled={!emailVerified}
+            >
               Update Password
             </Button>
           </form>
