@@ -103,6 +103,7 @@ export async function POST(req: Request) {
       Key: s3Key,
       Body: compressedBuffer,
       ContentType: file.type,
+      CacheControl: 'public, max-age=31536000, immutable'
     }));
 
     // Create Dropbox folders if they don't exist

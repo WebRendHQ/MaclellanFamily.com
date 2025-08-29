@@ -263,6 +263,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       Key: `${s3Prefix}${folder}/${file.name}`, // Add folder to the path
       Body: buffer,
       ContentType: file.type,
+      CacheControl: 'public, max-age=31536000, immutable',
     });
 
     await s3.send(command);
